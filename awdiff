@@ -63,7 +63,7 @@ while [ "${1::2}" = "--" ]; do
       ;;
     "--help")
       print_help
-      exit 1
+      exit
       ;;
     "--left"|"--right"|"--both")
       join_words="join_${1:2}"
