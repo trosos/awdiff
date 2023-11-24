@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Copyright (C) 2023 Tomas Tintera
+#
+# Permission to use, copy, modify, and/or distribute this
+# software for any purpose with or without fee is hereby
+# granted.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS
+# ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+# EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+# WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+# TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH
+# THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+set_nocolor () {
+  bdel="[-"
+  edel="-]"
+  binc="{+"
+  einc="+}"
+}
+
+set_color () {
+  set_nocolor
+  bdel="$(printf -- '\033[0;31m%s' "$bdel")"
+  edel="$(printf -- '%s\033[0m' "$edel")"
+  binc="$(printf -- '\033[0;32m%s' "$binc")"
+  einc="$(printf -- '%s\033[0m' "$einc")"
+}
+
+print_help () {
+  printf '%s\n\n' "Usage: $0 [option]... [--] file1 file2"
+  printf '%s\n' "  [--left|--right|--both]"
+  printf '%s\n' "  [--color|--no-color]"
+}
+
+misconfigured () {
+  printf '%s\n' "$0: $1" >&2
+  print_help
+  exit 1
+}
+
+check_file () {
+  [ -r "$1" ] || misconfigured "File not readable: $1"
+}
+
+if [ -t 1 ]; then
+  set_color
+else
+  set_nocolor
+fi
+
+join_words="join_both"
+
+while [ "${1::2}" = "--" ]; do
+  case "$1" in
+    "--")
+      shift
+      break
+      ;;
+    "--help")
+      print_help
+      exit 1
+      ;;
+    "--left"|"--right"|"--both")
+      join_words="join_${1:2}"
+      ;;
+    "--color")
+      set_color
+      ;;
+    "--no-color")
+      set_nocolor
+      ;;
+    *)
+      misconfigured "Invalid option: $1"
+  esac
+  shift
+done
+
+if [ "$#" -ne 2  ]; then
+  misconfigured "Two filename arguments expected"
+fi
+
+check_file "$1"
+check_file "$2"
+
+
+split_words () {
+  sed -e 's/\s\+/\nS&\nW/g' \
+      -e 's/\nW$//' \
+      -e '/^[^\n]/s/^/W/' \
+      -e 's/$/\nL/' \
+      -e 's/^\n//' \
+      -e 'a\' \
+      -- "$1"
+}
+
+diff_tokens () {
+  diff --new-line-format='+%L' \
+       --old-line-format='-%L' \
+       --unchanged-line-format=' %L' \
+       -- "$1" "$2"
+}
+
+join_left () {
+  sed -e '/^+/d' \
+      -e '/^.L/{z;x;s/\n//g;p;d}' \
+      -e "s/^-.\\(.*\\)/..$bdel\\1$edel/" \
+      -e 's/^..//;H;d'
+}
+
+join_right () {
+  sed -e '/^-/d' \
+      -e '/^.L/{z;x;s/\n//g;p;d}' \
+      -e "s/^+.\\(.*\\)/..$binc\\1$einc/" \
+      -e 's/^..//;H;d'
+}
+
+join_both () {
+  sed -e '/^.L/{z;x;s/\n//g;p;d}' \
+      -e "s/^-.\\(.*\\)/..$bdel\\1$edel/" \
+      -e "s/^+.\\(.*\\)/..$binc\\1$einc/" \
+      -e 's/^..//;H;d'
+}
+
+diff_tokens <(split_words "$1") <(split_words "$2") | $join_words
